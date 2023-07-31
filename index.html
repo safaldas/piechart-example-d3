@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Custom Pie Chart with SVG d3</title>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style>
+      textarea {
+        width: 100%;
+        -webkit-box-sizing: border-box;
+        -moz-box-sizing: border-box;
+        box-sizing: border-box;
+      }
+      .label-heading {
+        color: #393939;
+        font: 500 12px/150% "Inter", sans-serif;
+      }
+
+      .label-value {
+        color: #393939;
+        font: 700 12px/150% "Inter", sans-serif;
+      }
+
+      .description-container {
+        font: 400 10px/150% "Inter", sans-serif;
+        color: #667085;
+      }
+      .description-container > p {
+        margin: 3px 0;
+      }
+      .arrow-line {
+        stroke: #696969;
+        fill: none;
+      }
+
+      .arrowhead {
+        fill: #696969;
+      }
+
+      .arrow-dot {
+        fill: #696969;
+      }
+      /* Add 3D Perspective */
+      .arc {
+        filter: drop-shadow(0px 3px 5px rgba(0, 0, 0, 0.3));
+        transition: filter 0.2s ease-in-out;
+      }
+
+      .arc:hover {
+        filter: drop-shadow(0px 6px 10px rgba(0, 0, 0, 0.4));
+      }
+      /* Tooltip Style */
+      .tooltip {
+        font: 400 12px/150% "Inter", sans-serif;
+        position: absolute;
+        pointer-events: none;
+        background-color: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        padding: 5px;
+        font-size: 12px;
+        white-space: nowrap;
+        transition: filter 0.5s ease-in-out;
+        left: 0;
+        top: 0;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <svg id="chart" width="600" height="350"></svg>
+    <div class="container">
+      <label class="textareaContainer">
+        <button onclick="update()">Update</button>
+
+        <textarea
+          class="boxsizingBorder"
+          name="data"
+          id="textarea"
+          rows="20"
+          placeholder="json data example"
+        >
+        </textarea>
+      </label>
+    </div>
+
+    <script>
+      function update() {
+        const data = JSON.parse(document.getElementById("textarea").value);
+        console.log({ data });
+        const svg = d3.select("#chart");
+        svg.selectAll("*").remove();
+        const width = +svg.attr("width");
+        const height = +svg.attr("height");
+        const centerX = width / 3;
+        const centerY = height / 2;
+        const radius = Math.min(centerX, centerY) - 30;
+
+        // Create pie chart
+        const pie = d3.pie().value((d) => d.value);
+        const arc = d3.arc().innerRadius(0).outerRadius(radius);
+
+        const arcs = svg
+          .selectAll(".arc")
+          .data(pie(data))
+          .enter()
+          .append("g")
+          .attr("class", "arc")
+          .attr("transform", `translate(${centerX},${centerY})`);
+
+        arcs
+          .append("path")
+          .attr("d", arc)
+          .attr("fill", (d) => d.data.color);
+
+        // Add labels and descriptions
+        const textX = centerX + radius + 30;
+        const headingTextY = 1;
+
+        let totalHeight = 0;
+        const headingYPositions = [];
+        const labels = svg
+          .selectAll(".label")
+          .data(data)
+          .enter()
+          .append("g")
+          .attr("class", "label")
+          .attr("transform", (_, i) => {
+            const labelHeadingY = headingTextY + totalHeight;
+            const labelValueY = labelHeadingY + 25; // Assuming the height of labelHeading is 15
+            const descriptionY = labelValueY + 15; // Assuming the height of labelValue is 15
+
+            // Calculate the height of the description for the current data item
+            const descriptionContainer = document.createElement("div");
+            descriptionContainer.style.font =
+              "400 10px/150% 'Inter', sans-serif";
+            descriptionContainer.style.visibility = "hidden";
+            descriptionContainer.innerHTML = data[i].description;
+            document.body.appendChild(descriptionContainer);
+            const descriptionHeight = descriptionContainer.offsetHeight;
+            document.body.removeChild(descriptionContainer);
+
+            // Update the total height
+            totalHeight = descriptionY + descriptionHeight;
+            headingYPositions.push(descriptionY - 5);
+            return `translate(${textX}, ${descriptionY})`;
+          });
+
+        labels.each(function (d, i) {
+          const labelGroup = d3.select(this);
+
+          const labelHeading = labelGroup
+            .append("text")
+            .attr("class", "label-heading")
+            .attr("font-size", "12px")
+            .attr("font-weight", "500")
+            .attr("fill", "#393939")
+            .text(`${d.labelHeading} :`);
+
+          labelGroup
+            .append("text")
+            .attr("class", "label-value")
+            .attr("font-size", "12px")
+            .attr("font-weight", "700")
+            .attr("fill", "#393939")
+            .attr("x", labelHeading.node().getBBox().width + 5) // Position the label-value after label-heading
+            .text(`$ ${d.value.toLocaleString()}`);
+
+          labelGroup
+            .append("foreignObject")
+            .attr("class", "description-container")
+            .attr("width", 220)
+            .attr("height", 40)
+            .append("xhtml:p")
+            .attr(
+              "style",
+              "color: #667085; font: 400 10px/150% 'Inter', sans-serif;"
+            )
+            .text(d.description);
+        });
+
+        // Check if the total height exceeds the initial height of the SVG
+        if (totalHeight > height) {
+          svg.attr("height", totalHeight + 50); // Add some buffer for aesthetics
+        }
+
+        // Add arrow connections from pie slices to descriptions
+
+        arcs.each((d, i) => {
+          const [arcCenterX, arcCenterY] = arc.centroid(d);
+          const angle = (d.startAngle + d.endAngle) / 2;
+          // Calculate the points for the arrow line
+          const elbowX = arcCenterX * 1.3; // Adjust the multiplier to control arrow length
+          const elbowY = arcCenterY * 1.3; // Adjust the multiplier to control arrow length
+
+          const arrowX1 = centerX + elbowX;
+          const arrowY1 = centerY + elbowY;
+          const arrowX2 = textX - 10;
+          const arrowY2 = headingYPositions[i];
+
+          // Generate the path for the elbow arrow
+          const path = `M ${arrowX1},${arrowY1} L ${arrowX1},${arrowY2} ${
+            i >= Math.floor(data.length / 2)
+              ? `L ${arrowX2},${arrowY2}`
+              : `L ${arrowX2},${arrowY2}`
+          }`;
+          svg
+            .append("path")
+            .attr("d", path)
+            .attr("class", "arrow-line")
+            .attr("stroke", "#000")
+            .attr("marker-end", "url(#arrowhead)");
+          svg
+            .append("circle")
+            .attr("class", "arrow-dot")
+            .attr("cx", arrowX1)
+            .attr("cy", arrowY1)
+            .attr("r", 3);
+        });
+        // Define the arrowhead marker
+        svg
+          .append("defs")
+          .append("marker")
+          .attr("id", "arrowhead")
+          .attr("markerWidth", 10)
+          .attr("markerHeight", 15)
+          .attr("refX", 0)
+          .attr("refY", 3)
+          .attr("orient", "auto")
+          .append("path")
+          .attr("d", "M0,0 L0,6 5,3 z")
+          .attr("class", "arrowhead");
+
+        // Add tooltip on hover
+        const tooltip = d3
+          .select("body")
+          .append("div")
+          .attr("class", "tooltip");
+
+        arcs.on("mouseover", function (d) {
+          const value = d.data.value.toLocaleString();
+          tooltip
+            .style("opacity", 1)
+            .html(`<span>${d.data.labelHeading}</span><br>$ ${value}`)
+            .style("left", d3.event.pageX + 10 + "px")
+            .style("top", d3.event.pageY + 10 + "px");
+        });
+
+        arcs.on("mouseout", function () {
+          tooltip.style("opacity", 0);
+        });
+      }
+
+      const sample = [
+        {
+          labelHeading: "HCM Loan Amount",
+          value: 22490,
+          description:
+            "You qualify for based on age, purchase price and loan rate",
+          color: "#3A8EFF",
+        },
+        {
+          labelHeading: "Cash To Close",
+          value: 54532,
+          description:
+            "Including down payment, closing costs and initial mortgage insurance",
+          color: "#90C9FF",
+        },
+        {
+          labelHeading: "Loan Amount",
+          value: 343490,
+          description:
+            "The portion of the purchase that is funded with FHA Home Equity Conversion Mortgage.",
+          color: "#FF7C69",
+        },
+        {
+          labelHeading: "vishu Amount",
+          value: 34490,
+          description:
+            "The portion of the purchase that is funded with FHA Home Equity Conversion Mortgage.",
+          color: "#FF7C69",
+        },
+        {
+          labelHeading: "Closing costs",
+          value: 567532,
+          description:
+            "Includes appraisal, title, closing services & recording fees.",
+          color: "#5569C9",
+        },
+        {
+          labelHeading: "Closing costs",
+          value: 567532,
+          description:
+            "Includes appraisal, title, closing services & recording fees.",
+          color: "#5119C9",
+        },
+      ];
+      document.getElementById("textarea").value = JSON.stringify(
+        sample,
+        null,
+        4
+      );
+      update();
+    </script>
+  </body>
+</html>
